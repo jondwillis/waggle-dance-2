@@ -1,0 +1,99 @@
+{
+  "$schema": "https://turborepo.org/schema.json",
+  "globalDependencies": ["**/.env"],
+  "remoteCache": {
+    "signature": true
+  },
+  "pipeline": {
+    "db:generate": {
+      "inputs": ["prisma/schema.prisma"],
+      "cache": false
+    },
+    "db:push": {
+      "inputs": ["prisma/schema.prisma"],
+      "cache": false
+    },
+    "dev": {
+      "persistent": true,
+      "cache": false
+    },
+    "build": {
+      "dependsOn": ["^build", "^db:generate"],
+      "outputs": [".next/**", ".expo/**"]
+    },
+    "lint": {},
+    "lint:fix": {},
+    "clean": {
+      "cache": false
+    },
+    "type-check": {
+      "dependsOn": ["^db:generate"],
+      "cache": false
+    },
+    "start": {
+      "persistent": true,
+      "cache": false,
+      "dependsOn": ["^build"],
+      "outputs": []
+    }
+  },
+  "globalEnv": [
+    "CI",
+    "DISCORD_ID",
+    "DISCORD_SECRET",
+    "GITHUB_ID",
+    "GITHUB_SECRET",
+    "EMAIL_FROM",
+    "POSTMARK_TOKEN",
+    "NEXTAUTH_SECRET",
+    "NEXTAUTH_URL",
+    "NODE_ENV",
+    "SKIP_ENV_VALIDATION",
+    "VERCEL",
+    "VERCEL_URL",
+    "NEXT_PUBLIC_DISCORD_INVITE_URL",
+    "MEMORY_TYPE",
+    "OPENAI_API_KEY",
+    "OPENAI_ORGANIZATION_ID",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_API_VERSION",
+    "AZURE_OPENAI_API_INSTANCE_NAME",
+    "AZURE_OPENAI_BASE_PATH",
+    "AZURE_OPENAI_API_DEPLOYMENT_NAME",
+    "AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME",
+    "AZURE_OPENAI_API_FAST_DEPLOYMENT_NAME",
+    "AZURE_OPENAI_API_FAST_LARGE_DEPLOYMENT_NAME",
+    "AZURE_OPENAI_API_SMART_DEPLOYMENT_NAME",
+    "AZURE_OPENAI_API_SMART_LARGE_DEPLOYMENT_NAME",
+    "AZURE_OPENAI_API_FALLBACK_IF_NO_DEPLOYMENT",
+    "SERPAPI_API_KEY",
+    "SEARCHAPI_API_KEY",
+    "NEXT_PUBLIC_APP_VERSION",
+    "WEAVIATE_SCHEME",
+    "WEAVIATE_HOST",
+    "WEAVIATE_API_KEY",
+    "LONG_TERM_MEMORY_INDEX_NAME",
+    "VECTOR_NAMESPACE_SALT",
+    "NEXT_PUBLIC_LANGCHAIN_VERBOSE",
+    "NEXT_PUBLIC_LANGCHAIN_API_URL",
+    "LANGCHAIN_TRACING_V2",
+    "LANGCHAIN_ENDPOINT",
+    "LANGCHAIN_API_KEY",
+    "LANGCHAIN_PROJECT",
+    "EDGE_CONFIG",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_PRISMA_URL_NON_POOLING",
+    "KV_URL",
+    "KV_REST_API_URL",
+    "KV_REST_API_TOKEN",
+    "KV_REST_API_READ_ONLY_TOKEN",
+    "WOLFRAM_APP_ID",
+    "EXE_TRAJECTORY_EVALUATION",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_URL_NON_POOLING",
+    "NEXT_PUBLIC_HIDE_LLM",
+    "BLOB_READ_WRITE_TOKEN",
+    "ALLOW_API_CLIENTS",
+    "EXE_REPETITION_CHECK"
+  ]
+}

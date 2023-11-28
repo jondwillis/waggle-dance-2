@@ -1,0 +1,20 @@
+{
+  "github": {
+    "silent": true
+  },
+  "framework": "other",
+  "outputDirectory": "apps/nextjs/.next",
+  "buildCommand": "pnpx turbo build",
+  "installCommand": "pnpm install --store=node_modules.pnpm-store",
+  "devCommand": "pnpm dev",
+  "crons": [
+    {
+      "path": "/api/execution/cleanup",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/execution/deleteOld",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

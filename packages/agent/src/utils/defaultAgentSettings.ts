@@ -1,0 +1,27 @@
+import { AgentPromptingMethod, LLM_ALIASES, Temperature } from "./llms";
+
+export const defaultAgentSettings = {
+  plan: {
+    modelName: LLM_ALIASES["fast-large"],
+    temperature: Temperature.Stable,
+    maxTokens: 850,
+    agentPromptingMethod: null,
+    maxConcurrency: 4,
+  },
+  review: {
+    modelName: LLM_ALIASES["fast-large"],
+    temperature: Temperature.Stable,
+    maxTokens: 400,
+    agentPromptingMethod: AgentPromptingMethod.OpenAIAssistant,
+    maxConcurrency: 4,
+  },
+  execute: {
+    modelName: LLM_ALIASES["fast-large"],
+    temperature: Temperature.Stable,
+    maxTokens: 1000,
+    agentPromptingMethod: AgentPromptingMethod.OpenAIAssistant,
+    maxConcurrency: 6,
+  },
+};
+
+export default defaultAgentSettings;

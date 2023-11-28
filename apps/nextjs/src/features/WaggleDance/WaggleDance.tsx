@@ -1,0 +1,384 @@
+import assert from "assert";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import router from "next/router";
+import { Lan, ListAlt } from "@mui/icons-material";
+import {
+  Card,
+  Link,
+  Skeleton,
+  type AlertPropsColorOverrides,
+  type ColorPaletteProp,
+} from "@mui/joy";
+import Box from "@mui/joy/Box";
+import Stack, { type StackProps } from "@mui/joy/Stack";
+import Tab from "@mui/joy/Tab";
+import TabList from "@mui/joy/TabList";
+import Tabs from "@mui/joy/Tabs";
+import Typography from "@mui/joy/Typography";
+import { type OverridableStringUnion } from "@mui/types";
+import { TRPCClientError } from "@trpc/client";
+import { useSession } from "next-auth/react";
+
+import { TaskStatus, type TaskState } from "@acme/agent";
+import { type ExecutionPlusGraph } from "@acme/db";
+
+import { api } from "~/utils/api";
+import routes from "~/utils/routes";
+import useApp from "~/stores/appStore";
+import useGoalStore from "~/stores/goalStore";
+import useWaggleDanceMachineStore, {
+  createDraftExecution,
+} from "~/stores/waggleDanceStore";
+import useWaggleDanceAgentExecutor from "./hooks/useWaggleDanceAgentExecutor";
+
+const BottomControls = lazy(() => import("./components/BottomControls"));
+
+const TaskTabPanel = lazy(() => import("./components/TaskTabPanel"));
+const GraphTabPanel = lazy(() => import("./components/GraphTabPanel"));
+
+type Props = StackProps;
+// shows the graph, agents, results, general messages and chat input
+const WaggleDance = ({}: Props) => {
+  const { selectedGoal } = useGoalStore();
+  const {
+    isRunning,
+    setIsRunning,
+    isAutoStartEnabled,
+    setIsAutoStartEnabled,
+    execution,
+  } = useWaggleDanceMachineStore();
+  const {
+    graphData,
+    graph,
+    stop,
+    run: startWaggleDance,
+    reset,
+    results,
+    agentPacketsMap,
+    sortedTaskStates,
+  } = useWaggleDanceAgentExecutor();
+  const listItemsRef = useRef<HTMLLIElement[]>([]);
+  const taskListRef = useRef<HTMLUListElement>(null);
+  const [recentTaskId, setRecentTaskId] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const { setIsPageLoading, isAutoScrollToBottom, setIsAutoScrollToBottom } =
+    useApp();
+  const agentPackets = useMemo(
+    () => Object.values(agentPacketsMap),
+    [agentPacketsMap],
+  );
+
+  const { mutate: createExecution } = api.execution.create.useMutation({
+    onSettled: (data, error) => {
+      console.debug(
+        "create execution onSettled: ",
+        "data",
+        data,
+        "error",
+        error,
+      );
+      let createdExecution: ExecutionPlusGraph | undefined;
+
+      if (error) {
+        type HTTPStatusy = { httpStatus: number };
+        if (error instanceof TRPCClientError) {
+          const data = error.data as HTTPStatusy;
+          // route for anonymous users
+          if (data.httpStatus === 401 && selectedGoal) {
+            const draftExecution = createDraftExecution(selectedGoal);
+            createdExecution = draftExecution;
+          }
+          if (!createdExecution) {
+            throw error;
+          }
+        }
+      } else {
+        createdExecution = data;
+      }
+      assert(createdExecution);
+      void (async () => {
+        await router.push(
+          routes.goal({
+            id: createdExecution.goalId,
+            executionId: createdExecution?.id,
+          }),
+          undefined,
+          { shallow: true },
+        );
+        await startWaggleDance(createdExecution); // idk, execution not set was happening if we relied on useCallback hook
+        setIsPageLoading(false);
+      })();
+    },
+  });
+
+  const handleStart = useCallback(() => {
+    if (!isRunning) {
+      if (selectedGoal) {
+        setIsRunning(true);
+        setIsPageLoading(true);
+        reset();
+
+        createExecution({ goalId: selectedGoal.id });
+      } else {
+        setIsRunning(false);
+        console.error("no goal selected");
+      }
+    }
+  }, [
+    isRunning,
+    selectedGoal,
+    setIsRunning,
+    setIsPageLoading,
+    reset,
+    createExecution,
+  ]);
+
+  const handleStop = useCallback(() => {
+    setIsRunning(false);
+    stop();
+  }, [setIsRunning, stop]);
+
+  const hasMountedRef = useRef(false);
+
+  // auto-start
+  useEffect(() => {
+    if (isAutoStartEnabled) {
+      setIsAutoStartEnabled(false);
+      setTimeout(() => {
+        if (!hasMountedRef.current) {
+          hasMountedRef.current = true;
+          handleStart();
+        }
+      }, 0);
+    }
+  }, [handleStart, hasMountedRef, isAutoStartEnabled, setIsAutoStartEnabled]);
+
+  useEffect(() => {
+    if (!isAutoScrollToBottom) {
+      return;
+    }
+
+    // Find the task with the most recent update
+    const recentTask = results.reduce(
+      (recent: TaskState | null, task: TaskState) => {
+        if (!recent || task.updatedAt > recent.updatedAt) {
+          return task;
+        } else {
+          return recent;
+        }
+      },
+      null,
+    );
+
+    // Update the most recently updated task ID
+    if (recentTask && recentTask.id !== recentTaskId) {
+      setRecentTaskId(recentTask.id);
+
+      // Scroll to the most recently updated task
+      const taskIndex = sortedTaskStates.findIndex(
+        (task) => task.id === recentTask.id,
+      );
+      if (taskIndex !== -1) {
+        listItemsRef.current[taskIndex]?.scrollIntoView({ behavior: "smooth" });
+      }
+    }
+  }, [results, isAutoScrollToBottom, recentTaskId, sortedTaskStates]);
+
+  const statusColor = (
+    n: TaskState,
+  ): OverridableStringUnion<ColorPaletteProp, AlertPropsColorOverrides> => {
+    switch (n.status) {
+      case TaskStatus.done:
+        return "success";
+      case TaskStatus.error:
+        return "danger";
+      case TaskStatus.idle:
+      case TaskStatus.wait:
+        return "neutral";
+      case TaskStatus.starting:
+      case TaskStatus.working:
+        return "primary";
+    }
+  };
+
+  const notIdleTasks = useMemo(() => {
+    return sortedTaskStates.filter((s) => s.status !== TaskStatus.idle).length;
+  }, [sortedTaskStates]);
+
+  const doneTasks = useMemo(() => {
+    return sortedTaskStates.filter(
+      (t) => t.status === TaskStatus.done || t.status === TaskStatus.error,
+    ).length;
+  }, [sortedTaskStates]);
+
+  const inProgressTasks = useMemo(() => {
+    return agentPackets.filter(
+      (s) =>
+        s.status === TaskStatus.starting ||
+        s.status === TaskStatus.working ||
+        s.status === TaskStatus.wait,
+    ).length;
+  }, [agentPackets]);
+
+  const totalTasks = sortedTaskStates.length;
+
+  const inProgressOrDonePercent = useMemo(() => {
+    return (notIdleTasks / totalTasks) * 100;
+  }, [notIdleTasks, totalTasks]);
+
+  const progressPercent = useMemo(() => {
+    return (doneTasks / totalTasks) * 100;
+  }, [doneTasks, totalTasks]);
+
+  const progressLabel = useMemo(() => {
+    return `Tasks in progress: ${inProgressTasks}, done: ${doneTasks}, remaining: ${
+      totalTasks - notIdleTasks
+    }, total: ${totalTasks}`;
+  }, [inProgressTasks, doneTasks, totalTasks, notIdleTasks]);
+  const done = useMemo(() => {
+    return sortedTaskStates.filter((t) => t.status === TaskStatus.done);
+  }, [sortedTaskStates]);
+  const shouldShowProgress = useMemo(() => {
+    return isRunning || done.length > 0;
+  }, [done.length, isRunning]);
+
+  return (
+    <Stack gap="1rem" sx={{ mx: -4 }}>
+      <Box className="text-center">
+        <Typography level="body-sm" sx={{ opacity: session?.user.id ? 0 : 1 }}>
+          <Link href={routes.auth} target="_blank" color="primary">
+            Sign in
+          </Link>
+          {isRunning
+            ? " to save your next run"
+            : " to save and use better models"}
+        </Typography>
+      </Box>
+      {graph && graph.nodes.length > 0 && (
+        <Tabs
+          size="sm"
+          key={execution?.id}
+          aria-label="Waggle Dance Status and Results"
+          defaultValue={0}
+          variant="soft"
+          color="neutral"
+          sx={{ borderRadius: "0", m: 0, p: 0 }}
+        >
+          <TabList
+            sticky="top"
+            variant="outlined"
+            sx={(theme) => ({
+              boxShadow: "md",
+              borderRadius: "0",
+              flexWrap: "nowrap",
+              top: "calc(-0.95 * (var(--main-paddingTop, 0px) - var(--Header-height, 0px)))",
+              width: "100%",
+              backgroundColor: theme.palette.background.backdrop, // semi-transparent background
+              backdropFilter: "blur(10px)",
+              "@supports not ((-webkit-backdrop-filter: blur) or (backdrop-filter: blur))":
+                {
+                  backgroundColor: theme.palette.background.backdrop, // Add opacity to the background color
+                },
+              zIndex: 5,
+            })}
+          >
+            <Tab value={0} sx={{ flex: "1 1 auto" }}>
+              <ListAlt />
+              <Typography className="px-1">Tasks</Typography>
+            </Tab>
+            <Tab
+              value={1}
+              disabled={graph.nodes.length < 2}
+              sx={{
+                opacity: graph.nodes.length < 2 ? 0.2 : 1,
+                flex: "1 1 auto",
+              }}
+            >
+              <Lan />
+              <Typography className="px-1">Graph</Typography>
+            </Tab>
+          </TabList>
+
+          {sortedTaskStates.length > 0 ? (
+            <>
+              <Suspense
+                fallback={
+                  <Skeleton
+                    variant="rectangular"
+                    width="100%"
+                    height="25rem"
+                    animation="pulse"
+                  />
+                }
+              >
+                <TaskTabPanel
+                  nodes={graph.nodes}
+                  edges={graph.edges}
+                  sortedTaskStates={sortedTaskStates}
+                  statusColor={statusColor}
+                  isRunning={isRunning}
+                  listItemsRef={listItemsRef}
+                  taskListRef={taskListRef}
+                />
+              </Suspense>
+
+              <Suspense
+                fallback={
+                  <Skeleton
+                    variant="rectangular"
+                    width="100%"
+                    height="30rem"
+                    animation="wave"
+                  />
+                }
+              >
+                {graphData.nodes.length > 0 && graphData.links.length > 0 && (
+                  <GraphTabPanel data={graphData} />
+                )}
+              </Suspense>
+            </>
+          ) : (
+            <Card>
+              <Skeleton variant="rectangular" height="10rem" width="100%" />
+            </Card>
+          )}
+        </Tabs>
+      )}
+      <Suspense
+        fallback={
+          <Skeleton
+            variant="text"
+            width="100%"
+            height={"2rem"}
+            animation="wave"
+          />
+        }
+      >
+        <BottomControls
+          session={session}
+          isRunning={isRunning}
+          selectedGoal={selectedGoal}
+          graph={graph}
+          handleStart={handleStart}
+          handleStop={handleStop}
+          setIsAutoScrollToBottom={setIsAutoScrollToBottom}
+          isAutoScrollToBottom={isAutoScrollToBottom}
+          shouldShowProgress={shouldShowProgress}
+          progressPercent={progressPercent}
+          inProgressOrDonePercent={inProgressOrDonePercent}
+          progressLabel={progressLabel}
+        />
+      </Suspense>
+    </Stack>
+  );
+};
+
+export default WaggleDance;
